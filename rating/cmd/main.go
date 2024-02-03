@@ -4,15 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"google.golang.org/grpc"
 	"log"
-	"net/http"
-	"time"
-
+	"movieexample.com/gen"
 	"movieexample.com/pkg/discovery"
 	"movieexample.com/pkg/discovery/consul"
 	"movieexample.com/rating/internal/controller/rating"
-	httphandler "movieexample.com/rating/internal/handler/http"
+	grpchandler "movieexample.com/rating/internal/handler/grpc"
 	"movieexample.com/rating/internal/repository/memory"
+	"net"
+	"time"
 )
 
 const serviceName = "rating"
@@ -49,9 +50,12 @@ func main() {
 	log.Println("Starting the rating service")
 	repo := memory.New()
 	ctrl := rating.New(repo)
-	h := httphandler.New(ctrl)
-	http.Handle("/rating", http.HandlerFunc(h.Handle))
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil); err != nil {
-		panic(err)
+	h := grpchandler.New(ctrl)
+	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%v", port))
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
 	}
+	srv := grpc.NewServer()
+	gen.RegisterRatingServiceServer(srv, h)
+	srv.Serve(lis)
 }

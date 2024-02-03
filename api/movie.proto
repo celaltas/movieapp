@@ -13,3 +13,50 @@ message MovieDetails {
     Metadata metadata = 2;
 }
 
+message GetMetadataRequest {
+    string id = 1;
+}
+
+message GetMetadataResponse {
+    Metadata metadata = 1;
+}
+
+
+service MetadataService{
+    rpc GetMetadata (GetMetadataRequest) returns (GetMetadataResponse);
+    //rpc PutMetadata (PutMetadataRequest) returns (PutMetadataResponse);
+}
+
+message GetAggregatedRatingRequest{
+    string id=1;
+    string type=2;
+}
+
+message GetAggregatedRatingResponse{
+    double rating = 1;
+}
+
+message PutRatingRequest {
+    string user_id = 1;
+    string record_id = 2;
+    string record_type = 3;
+    int32 rating_value = 4;
+}
+message PutRatingResponse {
+}
+
+service RatingService {
+    rpc GetAggregatedRating(GetAggregatedRatingRequest) returns (GetAggregatedRatingResponse);
+    rpc PutRating(PutRatingRequest) returns (PutRatingResponse);
+}
+
+
+service MovieService {
+    rpc GetMovieDetails(GetMovieDetailsRequest) returns (GetMovieDetailsResponse);
+}
+message GetMovieDetailsRequest {
+    string movie_id = 1;
+}
+message GetMovieDetailsResponse {
+    MovieDetails movie_details = 1;
+}
