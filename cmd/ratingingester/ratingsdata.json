@@ -1,0 +1,42 @@
+[
+    {
+        "userId": "105",
+        "recordId": "1",
+        "recordType": 1,
+        "value": 1,
+        "providerId": "test-provider",
+        "eventType": "put"
+    },
+    {
+        "userId": "106",
+        "recordId": "4",
+        "recordType": 1,
+        "value": 2,
+        "providerId": "test-provider",
+        "eventType": "delete"
+    },
+    {
+        "userId": "105",
+        "recordId": "3",
+        "recordType": 1,
+        "value": 3,
+        "providerId": "test-provider",
+        "eventType": "put"
+    },
+    {
+        "userId": "106",
+        "recordId": "4",
+        "recordType": 1,
+        "value": 4,
+        "providerId": "test-provider",
+        "eventType": "delete"
+    },
+    {
+        "userId": "105",
+        "recordId": "4",
+        "recordType": 1,
+        "value": 5,
+        "providerId": "test-provider",
+        "eventType": "put"
+    }
+]
