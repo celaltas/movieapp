@@ -4,16 +4,18 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"google.golang.org/grpc"
 	"log"
+	"net"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"movieexample.com/gen"
 	"movieexample.com/pkg/discovery"
 	"movieexample.com/pkg/discovery/consul"
 	"movieexample.com/rating/internal/controller/rating"
 	grpchandler "movieexample.com/rating/internal/handler/grpc"
-	"movieexample.com/rating/internal/repository/memory"
-	"net"
-	"time"
+	"movieexample.com/rating/internal/repository/mysql"
 )
 
 const serviceName = "rating"
@@ -48,7 +50,10 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 	log.Println("Starting the rating service")
-	repo := memory.New()
+	repo, err := mysql.New()
+	if err != nil {
+		panic(err)
+	}
 	ctrl := rating.New(repo)
 	h := grpchandler.New(ctrl)
 	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%v", port))
@@ -57,5 +62,6 @@ func main() {
 	}
 	srv := grpc.NewServer()
 	gen.RegisterRatingServiceServer(srv, h)
+	reflection.Register(srv)
 	srv.Serve(lis)
 }
