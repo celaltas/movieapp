@@ -2,14 +2,15 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"gopkg.in/yaml.v3"
 	"movieexample.com/gen"
 	"movieexample.com/pkg/discovery"
 	"movieexample.com/pkg/discovery/consul"
@@ -22,10 +23,17 @@ const serviceName = "rating"
 
 func main() {
 
-	var port int
-	flag.IntVar(&port, "port", 8082, "API handler port")
-	flag.Parse()
-	log.Printf("Starting %s on port %d", serviceName, port)
+	f, err := os.Open("base.yaml")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	var cfg serverConfig
+	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
+		panic(err)
+	}
+	port := cfg.API.Port
 
 	registry, err := consul.NewRegistry("localhost:8500")
 	if err != nil {
@@ -35,7 +43,7 @@ func main() {
 	ctx := context.Background()
 	instanceID := discovery.GenerateInstanceID(serviceName)
 
-	if err := registry.Register(ctx, instanceID, serviceName, fmt.Sprintf("localhost:%d", port)); err != nil {
+	if err := registry.Register(ctx, instanceID, serviceName, fmt.Sprintf("localhost:%s", port)); err != nil {
 		panic(err)
 	}
 
@@ -47,9 +55,9 @@ func main() {
 			time.Sleep(1 * time.Second)
 		}
 	}()
-
 	defer registry.Deregister(ctx, instanceID, serviceName)
-	log.Println("Starting the rating service")
+
+	log.Printf("Starting %s on port %s", serviceName, port)
 	repo, err := mysql.New()
 	if err != nil {
 		panic(err)

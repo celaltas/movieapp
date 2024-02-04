@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"google.golang.org/grpc"
 	"log"
+	"net"
+	"os"
+	"time"
+
+	"google.golang.org/grpc"
+	"gopkg.in/yaml.v3"
 	"movieexample.com/gen"
 	"movieexample.com/movie/internal/controller/movie"
 	metadatagateway "movieexample.com/movie/internal/gateway/metadata/grpc"
@@ -13,18 +17,23 @@ import (
 	grpchandler "movieexample.com/movie/internal/handler/grpc"
 	"movieexample.com/pkg/discovery"
 	"movieexample.com/pkg/discovery/consul"
-	"net"
-	"time"
 )
 
 const serviceName = "movie"
 
 func main() {
 
-	var port int
-	flag.IntVar(&port, "port", 8083, "API handler port")
-	flag.Parse()
-	log.Printf("Starting %s on port %d", serviceName, port)
+	f, err := os.Open("base.yaml")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	var cfg serverConfig
+	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
+		panic(err)
+	}
+	port := cfg.API.Port
 
 	registry, err := consul.NewRegistry("localhost:8500")
 	if err != nil {
@@ -34,7 +43,7 @@ func main() {
 	ctx := context.Background()
 	instanceID := discovery.GenerateInstanceID(serviceName)
 
-	if err := registry.Register(ctx, instanceID, serviceName, fmt.Sprintf("localhost:%d", port)); err != nil {
+	if err := registry.Register(ctx, instanceID, serviceName, fmt.Sprintf("localhost:%s", port)); err != nil {
 		panic(err)
 	}
 
@@ -49,12 +58,12 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	log.Println("Starting the movie service")
+	log.Printf("Starting %s on port %s", serviceName, port)
 	metadataGateway := metadatagateway.New(registry)
 	ratingGateway := ratinggateway.New(registry)
 	ctrl := movie.New(ratingGateway, metadataGateway)
 	h := grpchandler.New(ctrl)
-	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", port))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
