@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/grpc-ecosystem/go-grpc-middleware/ratelimit"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 	"movieexample.com/gen"
@@ -20,6 +22,18 @@ import (
 )
 
 const serviceName = "movie"
+
+type Limiter struct {
+	l *rate.Limiter
+}
+
+func newLimiter(limit int, burst int) *Limiter {
+	return &Limiter{l: rate.NewLimiter(rate.Limit(limit), burst)}
+}
+
+func (l *Limiter) Limit() bool {
+	return l.l.Allow()
+}
 
 func main() {
 
@@ -67,7 +81,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	srv := grpc.NewServer()
+
+	const limit = 100
+	const burst = 100
+	l := newLimiter(limit, burst)
+	srv := grpc.NewServer(grpc.UnaryInterceptor(ratelimit.UnaryServerInterceptor(l)))
 	gen.RegisterMovieServiceServer(srv, h)
 	if err := srv.Serve(lis); err != nil {
 		panic(err)

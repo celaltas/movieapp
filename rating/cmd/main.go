@@ -6,6 +6,9 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
@@ -23,7 +26,12 @@ const serviceName = "rating"
 
 func main() {
 
-	f, err := os.Open("base.yaml")
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	f, err := os.Open("configs/base.yaml")
 	if err != nil {
 		panic(err)
 	}
@@ -40,7 +48,7 @@ func main() {
 		panic(err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 	instanceID := discovery.GenerateInstanceID(serviceName)
 
 	if err := registry.Register(ctx, instanceID, serviceName, fmt.Sprintf("localhost:%s", port)); err != nil {
@@ -55,7 +63,6 @@ func main() {
 			time.Sleep(1 * time.Second)
 		}
 	}()
-	defer registry.Deregister(ctx, instanceID, serviceName)
 
 	log.Printf("Starting %s on port %s", serviceName, port)
 	repo, err := mysql.New()
@@ -71,5 +78,20 @@ func main() {
 	srv := grpc.NewServer()
 	gen.RegisterRatingServiceServer(srv, h)
 	reflection.Register(srv)
-	srv.Serve(lis)
+
+	go func() {
+		defer wg.Done()
+		s := <-quit
+		cancel()
+		log.Printf("shutdown signal received: %v\n", s)
+		registry.Deregister(ctx, instanceID, serviceName)
+		log.Println("rating service deregistered")
+		srv.GracefulStop()
+		log.Println("rating service stopped")
+
+	}()
+	if err := srv.Serve(lis); err != nil {
+		panic(err)
+	}
+	wg.Wait()
 }
