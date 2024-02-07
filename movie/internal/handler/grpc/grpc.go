@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,9 +25,11 @@ func New(ctrl *movie.Controller) *Handler {
 
 // GetMovieDetails returns moviie details by id.
 func (h *Handler) GetMovieDetails(ctx context.Context, req *gen.GetMovieDetailsRequest) (*gen.GetMovieDetailsResponse, error) {
+	fmt.Println("movie handler getmoviedetails")
 	if req == nil || req.MovieId == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "nil req or empty id")
 	}
+	fmt.Println("request forward to controller")
 	m, err := h.ctrl.Get(ctx, req.MovieId)
 	if err != nil && errors.Is(err, movie.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, err.Error())

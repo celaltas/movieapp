@@ -8,9 +8,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/ratelimit"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/ratelimit"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"gopkg.in/yaml.v3"
 	"movieexample.com/gen"
 	"movieexample.com/movie/internal/controller/movie"
@@ -19,25 +22,25 @@ import (
 	grpchandler "movieexample.com/movie/internal/handler/grpc"
 	"movieexample.com/pkg/discovery"
 	"movieexample.com/pkg/discovery/consul"
+	"movieexample.com/pkg/tracing"
 )
 
 const serviceName = "movie"
 
-type Limiter struct {
-	l *rate.Limiter
+type SimpleLimiter struct {
+	limiter *rate.Limiter
 }
 
-func newLimiter(limit int, burst int) *Limiter {
-	return &Limiter{l: rate.NewLimiter(rate.Limit(limit), burst)}
-}
-
-func (l *Limiter) Limit() bool {
-	return l.l.Allow()
+func (s *SimpleLimiter) Limit(_ context.Context) error {
+	if !s.limiter.Allow() {
+		return fmt.Errorf("reached Rate-Limiting %v", s.limiter.Limit())
+	}
+	return nil
 }
 
 func main() {
 
-	f, err := os.Open("base.yaml")
+	f, err := os.Open("configs/base.yaml")
 	if err != nil {
 		panic(err)
 	}
@@ -72,6 +75,8 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
+	setJaegerAsProvider(ctx, cfg)
+
 	log.Printf("Starting %s on port %s", serviceName, port)
 	metadataGateway := metadatagateway.New(registry)
 	ratingGateway := ratinggateway.New(registry)
@@ -82,12 +87,39 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	const limit = 100
-	const burst = 100
-	l := newLimiter(limit, burst)
-	srv := grpc.NewServer(grpc.UnaryInterceptor(ratelimit.UnaryServerInterceptor(l)))
+	const limit = 2
+	const burst = 4
+	limiter := &SimpleLimiter{
+		limiter: rate.NewLimiter(limit, burst),
+	}
+
+	opts := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(
+			ratelimit.UnaryServerInterceptor(limiter),
+			// otelgrpc.UnaryServerInterceptor(),
+		),
+	}
+
+	srv := grpc.NewServer(opts...)
 	gen.RegisterMovieServiceServer(srv, h)
+	reflection.Register(srv)
 	if err := srv.Serve(lis); err != nil {
 		panic(err)
 	}
+}
+
+func setJaegerAsProvider(ctx context.Context, cfg serverConfig) {
+	tp, err := tracing.NewJaegerProvider(cfg.Jaeger.URL, serviceName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer func() {
+		if err := tp.Shutdown(ctx); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 }

@@ -8,7 +8,10 @@ import (
 	"os"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"gopkg.in/yaml.v3"
 	"movieexample.com/gen"
 	"movieexample.com/metadata/internal/controller/metadata"
@@ -16,13 +19,14 @@ import (
 	"movieexample.com/metadata/internal/repository/memory"
 	"movieexample.com/pkg/discovery"
 	"movieexample.com/pkg/discovery/consul"
+	"movieexample.com/pkg/tracing"
 )
 
 const serviceName = "metadata"
 
 func main() {
 
-	f, err := os.Open("base.yaml")
+	f, err := os.Open("configs/base.yaml")
 	if err != nil {
 		panic(err)
 	}
@@ -58,6 +62,7 @@ func main() {
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
 	log.Printf("Starting %s on port %s", serviceName, port)
+	setJaegerAsProvider(ctx, cfg)
 	repo := memory.New()
 	ctrl := metadata.New(repo)
 	h := grpchandler.New(ctrl)
@@ -67,6 +72,23 @@ func main() {
 	}
 	srv := grpc.NewServer()
 	gen.RegisterMetadataServiceServer(srv, h)
+	reflection.Register(srv)
 	srv.Serve(lis)
 
+}
+
+func setJaegerAsProvider(ctx context.Context, cfg serverConfig) {
+	tp, err := tracing.NewJaegerProvider(cfg.Jaeger.URL, serviceName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer func() {
+		if err := tp.Shutdown(ctx); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 }

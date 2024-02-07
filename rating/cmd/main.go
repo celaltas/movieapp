@@ -11,12 +11,16 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"gopkg.in/yaml.v3"
 	"movieexample.com/gen"
 	"movieexample.com/pkg/discovery"
 	"movieexample.com/pkg/discovery/consul"
+	"movieexample.com/pkg/tracing"
 	"movieexample.com/rating/internal/controller/rating"
 	grpchandler "movieexample.com/rating/internal/handler/grpc"
 	"movieexample.com/rating/internal/repository/mysql"
@@ -64,6 +68,8 @@ func main() {
 		}
 	}()
 
+	setJaegerAsProvider(ctx, cfg)
+
 	log.Printf("Starting %s on port %s", serviceName, port)
 	repo, err := mysql.New()
 	if err != nil {
@@ -75,7 +81,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpc.UnaryInterceptor(otelgrpc.
+		UnaryServerInterceptor()))
 	gen.RegisterRatingServiceServer(srv, h)
 	reflection.Register(srv)
 
@@ -94,4 +101,20 @@ func main() {
 		panic(err)
 	}
 	wg.Wait()
+}
+
+func setJaegerAsProvider(ctx context.Context, cfg serverConfig) {
+	tp, err := tracing.NewJaegerProvider(cfg.Jaeger.URL, serviceName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer func() {
+		if err := tp.Shutdown(ctx); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 }
